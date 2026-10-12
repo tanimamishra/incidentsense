@@ -1,0 +1,31 @@
+services:
+  app:
+    build: ./app
+    container_name: incidentsense-app
+    ports:
+      - "5000:5000"
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: incidentsense-prometheus
+    volumes:
+            - ./prometheus:/etc/prometheus
+    ports:
+      - "9090:9090"
+  
+  agent:
+    build: ./agent
+    container_name: incidentsense-agent
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: incidentsense-alertmanager
+    volumes:
+      - ./alertmanager:/etc/alertmanager
+    ports:
+      - "9093:9093"

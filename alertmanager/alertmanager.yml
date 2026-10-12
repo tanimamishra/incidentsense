@@ -1,0 +1,9 @@
+route:
+  receiver: "agent"
+  group_wait: 5s
+
+receivers:
+  - name: "agent"
+    webhook_configs:
+      - url: "http://agent:8000/webhook"
+        send_resolved: false
