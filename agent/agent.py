@@ -1,6 +1,6 @@
 import requests
 from tools import query_metrics, get_container_logs, get_container_status
-from rules import classify
+from rules import classify, is_consistent
 
 OLLAMA_URL = "http://host.docker.internal:11434"
 MODEL = "qwen2.5:7b"
@@ -62,13 +62,6 @@ def run_tool(name: str, args: dict) -> str:
     return f"unknown tool: {name}"
 
 BAD_PHRASES = ["out of memory", "memory leak", "oom-kill", "oom kill", "oom killed"]
-
-def is_consistent(category: str, text: str) -> bool:
-    """The explanation must agree with the rule engine about memory."""
-    mentions_memory = any(p in text.lower() for p in BAD_PHRASES)
-    if category == "memory_leak_oom":
-        return mentions_memory
-    return not mentions_memory
 
 def run_llm(messages: list, trace: list) -> str:
     for step in range(1, MAX_STEPS + 1):

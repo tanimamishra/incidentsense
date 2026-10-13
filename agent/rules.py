@@ -10,6 +10,19 @@ FIXES = {
     "unknown": "Not enough evidence. Check logs and metrics manually.",
 }
 
+MEMORY_PHRASES = ["out of memory", "memory leak", "oom-kill", "oom kill", "oom killed"]
+UNSUPPORTED = re.compile(r"\b(kubernetes|k8s|evict\w*|pods?)\b", re.IGNORECASE)
+
+def is_consistent(category: str, text: str) -> bool:
+    """Reject explanations that contradict the rule engine or mention things not in this setup."""
+    lower = text.lower()
+    if UNSUPPORTED.search(lower):
+        return False
+    mentions_memory = any(phrase in lower for phrase in MEMORY_PHRASES)
+    if category == "memory_leak_oom":
+        return mentions_memory
+    return not mentions_memory
+
 def parse_status(text: str) -> dict:
     return dict(re.findall(r"(\w+)=(\S+)", text))
 
@@ -47,3 +60,14 @@ if __name__ == "__main__":
     for status, up, expected in cases:
         got = classify(status, up)["category"]
         print("OK  " if got == expected else "FAIL", expected, "->", got)
+
+    checks = [
+        ("stopped_externally", "Stopped by a Kubernetes eviction.", False),
+        ("stopped_externally", "The container was stopped from outside with exit code 137.", True),
+        ("stopped_externally", "The app ran out of memory.", False),
+        ("memory_leak_oom", "The container ran out of memory.", True),
+        ("memory_leak_oom", "The container crashed.", False),
+    ]
+    for category, text, expected in checks:
+        got = is_consistent(category, text)
+        print("OK  " if got == expected else "FAIL", category, "|", text)

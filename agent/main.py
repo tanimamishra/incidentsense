@@ -1,11 +1,16 @@
-from fastapi import FastAPI, Request
+import json
+from fastapi import FastAPI, Request, BackgroundTasks
 from tools import query_metrics, get_container_logs, get_container_status
 from llm import ask_llm
 from agent import investigate
 app = FastAPI()
 
+def handle_alert(alert_text: str):
+    result = investigate(alert_text)
+    print("INCIDENT RESULT " + json.dumps(result), flush=True)
+
 @app.post("/webhook")
-async def webhook(request: Request):
+async def webhook(request: Request, background: BackgroundTasks):
     payload = await request.json()
     for alert in payload.get("alerts", []):
         labels = alert.get("labels", {})
@@ -14,6 +19,8 @@ async def webhook(request: Request):
         severity = labels.get("severity", "unknown")
         started = alert.get("startsAt", "unknown")
         print(f"ALERT {name} | instance={instance} | severity={severity} | started={started}", flush=True)
+        if alert.get("status") == "firing":
+            background.add_task(handle_alert, f"{name} on {instance}")
     return {"received": True}
 
 @app.get("/health")
