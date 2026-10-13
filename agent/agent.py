@@ -1,5 +1,6 @@
 import requests
 from tools import query_metrics, get_container_logs, get_container_status
+from rules import classify
 
 OLLAMA_URL = "http://host.docker.internal:11434"
 MODEL = "qwen2.5:7b"
@@ -7,15 +8,9 @@ MAX_STEPS = 5
 
 SYSTEM_PROMPT = (
     "You are an incident investigator for a Flask app in the container 'incidentsense-app'. "
-    "You are given collected evidence. Use only that evidence and any extra tool results. "
-    "Facts you must respect: "
-    "the Prometheus job name is 'flask-app'. "
-    "up = 0 or running=False means the app is down. "
-    "oom_killed=False means memory was NOT the cause. "
-    "exit_code=137 with oom_killed=False means the container was stopped or killed from outside. "
-    "exit_code=137 with oom_killed=True means it ran out of memory. "
-    "Never claim a cause that the evidence does not show. "
-    "Reply in exactly three lines starting with 'Cause:', 'Evidence:' and 'Fix:'."
+    "A rule engine has already decided the cause category. Explain it in ONE plain sentence "
+    "using the evidence provided. Do not change the category and do not mention other causes. "
+    "Call a tool only if you need more evidence."
 )
 
 TOOLS = [
@@ -66,14 +61,50 @@ def run_tool(name: str, args: dict) -> str:
         return get_container_status(args.get("name", "incidentsense-app"))
     return f"unknown tool: {name}"
 
+BAD_PHRASES = ["out of memory", "memory leak", "oom-kill", "oom kill", "oom killed"]
+
+def is_consistent(category: str, text: str) -> bool:
+    """The explanation must agree with the rule engine about memory."""
+    mentions_memory = any(p in text.lower() for p in BAD_PHRASES)
+    if category == "memory_leak_oom":
+        return mentions_memory
+    return not mentions_memory
+
+def run_llm(messages: list, trace: list) -> str:
+    for step in range(1, MAX_STEPS + 1):
+        response = requests.post(
+            f"{OLLAMA_URL}/api/chat",
+            json={"model": MODEL, "messages": messages, "tools": TOOLS, "stream": False},
+            timeout=600,
+        )
+        message = response.json()["message"]
+        messages.append(message)
+
+        tool_calls = message.get("tool_calls")
+        if not tool_calls:
+            return message.get("content", "")
+
+        for call in tool_calls:
+            name = call["function"]["name"]
+            args = call["function"]["arguments"]
+            result = run_tool(name, args)
+            trace.append({"step": step, "tool": name, "args": args, "mode": "llm"})
+            print(f"STEP {step}: {name} {args}", flush=True)
+            messages.append({"role": "tool", "tool_name": name, "content": result})
+    return ""
+
 def investigate(alert_text: str) -> dict:
     container = "incidentsense-app"
     status = get_container_status(container)
     up = query_metrics('up{job="flask-app"}')
     logs = get_container_logs(container, 15)
 
+    decision = classify(status, up)
+    category = decision["category"]
+
     evidence = (
-        f"Alert: {alert_text}\n\n"
+        f"Alert: {alert_text}\n"
+        f"Rule engine category: {category}\n\n"
         f"Container status: {status}\n\n"
         f"Prometheus up: {up}\n\n"
         f"Recent logs:\n{logs}"
@@ -87,25 +118,26 @@ def investigate(alert_text: str) -> dict:
         {"step": 0, "tool": "query_metrics", "mode": "auto"},
         {"step": 0, "tool": "get_container_logs", "mode": "auto"},
     ]
-    for step in range(1, MAX_STEPS + 1):
-        response = requests.post(
-            f"{OLLAMA_URL}/api/chat",
-            json={"model": MODEL, "messages": messages, "tools": TOOLS, "stream": False},
-            timeout=600,
-        )
-        message = response.json()["message"]
-        messages.append(message)
 
-        tool_calls = message.get("tool_calls")
-        if not tool_calls:
-            return {"answer": message.get("content", ""), "tools_used": trace}
+    source = "llm"
+    try:
+        explanation = run_llm(messages, trace).strip()
+    except Exception:
+        explanation = ""
 
-        for call in tool_calls:
-            name = call["function"]["name"]
-            args = call["function"]["arguments"]
-            result = run_tool(name, args)
-            trace.append({"step": step, "tool": name, "args": args})
-            print(f"STEP {step}: {name} {args}", flush=True)
-            messages.append({"role": "tool", "tool_name": name, "content": result})
+    if not explanation or not is_consistent(category, explanation):
+        explanation = f"Rule-based result: {category.replace('_', ' ')}."
+        source = "rules"
 
-    return {"answer": "stopped: step limit reached", "tools_used": trace}
+    return {
+        "category": category,
+        "explanation": explanation,
+        "evidence": {
+            "container_status": status,
+            "prometheus_up": up,
+            "log_tail": logs.splitlines()[-3:],
+        },
+        "fix": decision["fix"],
+        "explained_by": source,
+        "tools_used": trace,
+    }
