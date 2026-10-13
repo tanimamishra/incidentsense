@@ -36,5 +36,14 @@ def work():
     app.logger.info("work completed in %s seconds", duration)
     return jsonify(result=total, duration=duration)
 
+LEAK = []
+
+@app.route("/chaos/leak")
+def leak():
+    LEAK.append(b"x" * (10 * 1024 * 1024))
+    total = len(LEAK) * 10
+    app.logger.info("leaked another 10 MB, total leaked %s MB", total)
+    return jsonify(leaked_mb=total)
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
