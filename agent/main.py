@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from tools import query_metrics, get_container_logs, get_container_status
 from llm import ask_llm
+from agent import investigate
 app = FastAPI()
 
 @app.post("/webhook")
@@ -33,3 +34,7 @@ def debug_status(name: str):
 @app.get("/debug/llm")
 def debug_llm(q: str):
     return {"reply": ask_llm(q)}
+
+@app.get("/debug/agent")
+def debug_agent(alert: str):
+    return investigate(alert)
