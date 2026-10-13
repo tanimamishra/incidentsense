@@ -1,5 +1,6 @@
 import requests
 import docker
+import re
 
 PROMETHEUS_URL = "http://prometheus:9090"
 
@@ -21,12 +22,16 @@ def query_metrics(promql: str) -> str:
     return "\n".join(lines)
 
 def get_container_logs(name: str, lines: int = 30) -> str:
-    """Return the last N useful log lines of a container (health-scrape noise removed)."""
+    """Return the last N useful log lines (scrape noise, dev-server warning and colour codes removed)."""
     try:
         client = docker.from_env()
         container = client.containers.get(name)
         raw = container.logs(tail=300).decode("utf-8", errors="replace")
-        useful = [line for line in raw.splitlines() if "GET /metrics" not in line]
+        raw = re.sub(r"\x1b\[[0-9;]*m", "", raw)
+        useful = [
+            line for line in raw.splitlines()
+            if "GET /metrics" not in line and "development server" not in line
+        ]
         return "\n".join(useful[-lines:])
     except Exception as error:
         return f"could not read logs: {error}"

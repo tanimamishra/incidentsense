@@ -11,8 +11,7 @@ FIXES = {
 }
 
 MEMORY_PHRASES = ["out of memory", "memory leak", "oom-kill", "oom kill", "oom killed"]
-UNSUPPORTED = re.compile(r"\b(kubernetes|k8s|evict\w*|pods?)\b", re.IGNORECASE)
-
+UNSUPPORTED = re.compile(r"\b(kubernetes|k8s|evict\w*|pods?|wsgi)\b", re.IGNORECASE)
 def is_consistent(category: str, text: str) -> bool:
     """Reject explanations that contradict the rule engine or mention things not in this setup."""
     lower = text.lower()
@@ -67,6 +66,7 @@ if __name__ == "__main__":
         ("stopped_externally", "The app ran out of memory.", False),
         ("memory_leak_oom", "The container ran out of memory.", True),
         ("memory_leak_oom", "The container crashed.", False),
+        ("stopped_externally", "It stopped because of the development server warning, use a WSGI server.", False),
     ]
     for category, text, expected in checks:
         got = is_consistent(category, text)

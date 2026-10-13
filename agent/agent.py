@@ -11,6 +11,7 @@ SYSTEM_PROMPT = (
     "A rule engine has already decided the cause category. Explain it in ONE plain sentence "
     "using the evidence provided. Do not change the category and do not mention other causes. "
     "Call a tool only if you need more evidence."
+    "Ignore the Flask development-server warning; it is normal and is never a cause. "
 )
 
 TOOLS = [
