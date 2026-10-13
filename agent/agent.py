@@ -6,11 +6,16 @@ MODEL = "qwen2.5:7b"
 MAX_STEPS = 5
 
 SYSTEM_PROMPT = (
-    "You are an incident investigator. An alert fired for a Flask app running in the "
-    "container 'incidentsense-app'. Use the tools to collect evidence, then explain the root cause. "
-    "Useful Prometheus metrics: up, process_resident_memory_bytes, http_request_duration_seconds_sum. "
-    "Reply in exactly three lines: Cause, Evidence (quote a real log line or number), Suggested fix. "
-    "Never invent evidence. If tools show nothing wrong, say so."
+    "You are an incident investigator for a Flask app in the container 'incidentsense-app'. "
+    "You are given collected evidence. Use only that evidence and any extra tool results. "
+    "Facts you must respect: "
+    "the Prometheus job name is 'flask-app'. "
+    "up = 0 or running=False means the app is down. "
+    "oom_killed=False means memory was NOT the cause. "
+    "exit_code=137 with oom_killed=False means the container was stopped or killed from outside. "
+    "exit_code=137 with oom_killed=True means it ran out of memory. "
+    "Never claim a cause that the evidence does not show. "
+    "Reply in exactly three lines starting with 'Cause:', 'Evidence:' and 'Fix:'."
 )
 
 TOOLS = [
@@ -62,11 +67,26 @@ def run_tool(name: str, args: dict) -> str:
     return f"unknown tool: {name}"
 
 def investigate(alert_text: str) -> dict:
+    container = "incidentsense-app"
+    status = get_container_status(container)
+    up = query_metrics('up{job="flask-app"}')
+    logs = get_container_logs(container, 15)
+
+    evidence = (
+        f"Alert: {alert_text}\n\n"
+        f"Container status: {status}\n\n"
+        f"Prometheus up: {up}\n\n"
+        f"Recent logs:\n{logs}"
+    )
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Alert: {alert_text}"},
+        {"role": "user", "content": evidence},
     ]
-    trace = []
+    trace = [
+        {"step": 0, "tool": "get_container_status", "mode": "auto"},
+        {"step": 0, "tool": "query_metrics", "mode": "auto"},
+        {"step": 0, "tool": "get_container_logs", "mode": "auto"},
+    ]
     for step in range(1, MAX_STEPS + 1):
         response = requests.post(
             f"{OLLAMA_URL}/api/chat",
