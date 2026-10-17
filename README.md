@@ -19,7 +19,7 @@ Everything runs on one laptop with Docker Compose. The language model runs local
 9. The result is saved in SQLite and shown at `/stats`.
 
 ```mermaid
-flowchart LR
+flowchart TD
     A["Flask app"] -->|"/metrics"| P["Prometheus"]
     P -->|"alert fires"| M["Alertmanager"]
     M -->|"webhook"| G["Agent (FastAPI)"]
