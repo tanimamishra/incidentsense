@@ -1,5 +1,6 @@
 import requests
 import docker
+from redact import redact
 import re
 
 PROMETHEUS_URL = "http://prometheus:9090"
@@ -32,7 +33,7 @@ def get_container_logs(name: str, lines: int = 30) -> str:
             line for line in raw.splitlines()
             if "GET /metrics" not in line and "development server" not in line
         ]
-        return "\n".join(useful[-lines:])
+        return redact("\n".join(useful[-lines:]))
     except Exception as error:
         return f"could not read logs: {error}"
 
