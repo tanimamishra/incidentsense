@@ -3,10 +3,13 @@ from fastapi import FastAPI, Request, BackgroundTasks
 from tools import query_metrics, get_container_logs, get_container_status
 from llm import ask_llm
 from agent import investigate
+from db import init_db, save_incident, top_causes, recent_incidents
 app = FastAPI()
+init_db()
 
 def handle_alert(alert_text: str):
     result = investigate(alert_text)
+    save_incident(alert_text, result)
     print("INCIDENT RESULT " + json.dumps(result), flush=True)
 
 @app.post("/webhook")
@@ -45,3 +48,7 @@ def debug_llm(q: str):
 @app.get("/debug/agent")
 def debug_agent(alert: str):
     return investigate(alert)
+
+@app.get("/stats")
+def stats():
+    return {"top_causes": top_causes(), "recent": recent_incidents()}
